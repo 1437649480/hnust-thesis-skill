@@ -376,7 +376,7 @@ class ThesisChecker:
                        '加粗', f'{label} 应为加粗')
 
     def check_body_format(self, para, text):
-        """检查正文格式"""
+        """检查正文格式：宋体小四号，段前段后不空行，1.25倍行距，首行缩进2字符"""
         # 跳过表名、图题、致谢标题等非正文段落
         if re.match(r'^(表|图)[\d]+\.[\d]+', text):
             return  # 表名/图题，不检查正文格式
@@ -384,6 +384,17 @@ class ThesisChecker:
             return  # 表格说明文字
         if match_thanks_title(text):
             return  # 致谢标题
+        
+        # 字体字号检查
+        run = get_run_info(para)
+        if run:
+            if run.font.name:
+                self.check(run.font.name == SPEC['body']['font'],
+                           '字体', f'正文"{text[:20]}"字体应为宋体 (实际: {run.font.name})')
+            if run.font.size:
+                self.check(abs(run.font.size - SPEC['body']['size']) <= TOLERANCE,
+                           '字号', f'正文"{text[:20]}"字号应为小四号/12pt (实际: {run.font.size/12700 if run.font.size else "None"}pt)')
+        
         # 行距
         pf = para.paragraph_format
         line_spacing = pf.line_spacing
