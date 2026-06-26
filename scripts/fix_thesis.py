@@ -189,13 +189,20 @@ def match_appendix(text):
     return bool(re.match(r'^附录[A-Z]', text))
 
 
-def set_run_font(run, font_name, font_name_east_asian=None):
+def match_thanks_title(text):
+    """匹配致谢标题"""
+    return text in ('致 谢', '致谢')
+
+
+def set_run_font(run, font_name, font_name_east_asian=None, font_name_ascii=None):
     """
     同时设置西文字体(run.font.name)和东亚字体(eastAsia属性)。
     在中文文档中，必须同时设置两者才能保证中文字体生效。
     """
     if font_name_east_asian is None:
         font_name_east_asian = font_name
+    if font_name_ascii is None:
+        font_name_ascii = font_name
 
     run.font.name = font_name
 
@@ -207,8 +214,8 @@ def set_run_font(run, font_name, font_name_east_asian=None):
         rPr.insert(0, rFonts)
     rFonts.set(qn('w:eastAsia'), font_name_east_asian)
     # 同时设置西文字体
-    rFonts.set(qn('w:ascii'), font_name)
-    rFonts.set(qn('w:hAnsi'), font_name)
+    rFonts.set(qn('w:ascii'), font_name_ascii)
+    rFonts.set(qn('w:hAnsi'), font_name_ascii)
 
 
 def apply_font_spec(para, spec):
@@ -415,7 +422,7 @@ class ThesisFixer:
 
             # 2. 参考文献条目: [1] 开头
             if match_ref(text):
-                apply_font_spec(para, FONT_SPEC['ref_entry'])
+                self._fix_ref_entry(para)
                 apply_paragraph_format(para, {
                     'align': FONT_SPEC['ref_entry']['align'],
                     'before': Pt(0), 'after': Pt(0),
@@ -502,6 +509,21 @@ class ThesisFixer:
             apply_font_spec(para, FONT_SPEC['body'])
             apply_paragraph_format(para, FONT_SPEC['body'])
             self.stats['body'] += 1
+
+    def _fix_ref_entry(self, para):
+        """
+        修复参考文献条目格式。
+        中文字体: 宋体五号(10.5pt)
+        西文字体: Times New Roman五号(10.5pt)
+        """
+        for run in para.runs:
+            if not run.text.strip():
+                continue
+            # 设置字号
+            run.font.size = FONT_SPEC['ref_entry']['size']
+            run.bold = FONT_SPEC['ref_entry']['bold']
+            # 同时设置中文字体为宋体，西文字体为Times New Roman
+            set_run_font(run, '宋体', '宋体', 'Times New Roman')
 
     def _fix_keywords(self, para, text):
         """
@@ -694,6 +716,62 @@ class ThesisFixer:
         self.stats['table_cell'] = fixed_count
         return fixed_count
 
+    # ── 分页符插入 ──
+    def fix_page_breaks(self):
+        """在每章、参考文献、致谢、附录之前插入分页符"""
+        fixed_count = 0
+        paragraphs = list(self.doc.paragraphs)
+        
+        for i, para in enumerate(paragraphs):
+            text = get_text(para)
+            if not text:
+                continue
+            
+            # 检查是否需要插入分页符的标题
+            needs_break = (
+                match_h1(text) or  # 章标题
+                text in ('参考文献', '参 考 文 献') or
+                match_thanks_title(text) or
+                match_appendix(text)
+            )
+            
+            if needs_break and i > 0:
+                # 检查前一个段落是否已经有分页符
+                prev_para = paragraphs[i - 1]
+                has_page_break = False
+                
+                # 检查前一段落的pPr中是否有pageBreakBefore
+                pPr = prev_para._element.find(qn('w:pPr'))
+                if pPr is not None:
+                    page_break = pPr.find(qn('w:pageBreakBefore'))
+                    if page_break is not None:
+                        has_page_break = True
+                
+                # 检查前一段落中是否有分页符
+                if not has_page_break:
+                    for run_elem in prev_para._element.findall(qn('w:r')):
+                        for br in run_elem.findall(qn('w:br')):
+                            if br.get(qn('w:type')) == 'page':
+                                has_page_break = True
+                                break
+                        if has_page_break:
+                            break
+                
+                # 如果没有分页符，则在当前段落前插入
+                if not has_page_break:
+                    # 在当前段落的pPr中添加pageBreakBefore
+                    pPr = para._element.find(qn('w:pPr'))
+                    if pPr is None:
+                        pPr = OxmlElement('w:pPr')
+                        para._element.insert(0, pPr)
+                    
+                    page_break = OxmlElement('w:pageBreakBefore')
+                    pPr.append(page_break)
+                    fixed_count += 1
+        
+        self.stats['page_break'] = fixed_count
+        return fixed_count
+
     # ── 汇总 ──
     def run_all(self):
         """执行所有修复项并输出统计"""
@@ -735,6 +813,10 @@ class ThesisFixer:
         self.fix_table_cells()
         print(f"  [4.5] 表内文字格式: 修复 {self.stats.get('table_cell', 0)} 处")
 
+        # 6. 分页符
+        self.fix_page_breaks()
+        print(f"  [4.3] 分页符: 插入 {self.stats.get('page_break', 0)} 处")
+
         # 总计
         total_fixed = (
             self.stats['page_setup'] + self.stats['header'] +
@@ -744,7 +826,8 @@ class ThesisFixer:
             self.stats['kw_label'] + self.stats['kw_content'] +
             self.stats['en_kw_label'] + self.stats['en_kw_content'] +
             self.stats['citation'] + self.stats.get('table_cell', 0) +
-            self.stats.get('thanks_title', 0) + self.stats.get('appendix_title', 0)
+            self.stats.get('thanks_title', 0) + self.stats.get('appendix_title', 0) +
+            self.stats.get('page_break', 0)
         )
 
         print(f"\n{'─' * 60}")

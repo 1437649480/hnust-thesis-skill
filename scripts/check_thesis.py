@@ -437,6 +437,9 @@ class ThesisChecker:
                 continue
             if in_refs:
                 continue  # 跳过参考文献条目
+            # 跳过款/项标题（以（1）、（2）等开头）
+            if re.match(r'^[（(][\d一二三四五六七八九十]+[）)]', text):
+                continue
             # 跳过标题
             if match_h1(text) or match_h2(text) or match_h3(text):
                 # 检查标题中是否有引用标注（不应有）
@@ -816,17 +819,17 @@ class ThesisChecker:
         self.check_abstract_body_format()
 
         # 输出结果
-        print(f"\n{'─'*60}")
-        print(f"  ✓ 通过: {len(self.passed)} 项")
+        print(f"\n{'-'*60}")
+        print(f"  [OK] 通过: {len(self.passed)} 项")
         if self.errors:
-            print(f"  ✗ 错误: {len(self.errors)} 项")
+            print(f"  [!!] 错误: {len(self.errors)} 项")
             for e in self.errors:
                 print(f"    {e}")
         if self.warnings:
-            print(f"  ⚠ 警告: {len(self.warnings)} 项")
+            print(f"  [??] 警告: {len(self.warnings)} 项")
             for w in self.warnings:
                 print(f"    {w}")
-        print(f"{'─'*60}")
+        print(f"{'-'*60}")
 
         return len(self.errors) == 0
 
