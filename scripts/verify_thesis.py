@@ -722,11 +722,22 @@ class ThesisVerifier:
         short = text[:30]
 
         if run:
-            if run.font.name == spec['font']:
-                self.verify('字体', True, f'参考文献条目"{short}" 宋体')
+            # 字体（参考文献要求中文宋体+英文TNR混排）
+            rPr = run._element.find(qn('w:rPr'))
+            ascii_font = run.font.name
+            ea_font = run.font.name
+            if rPr is not None:
+                rFonts = rPr.find(qn('w:rFonts'))
+                if rFonts is not None:
+                    ascii_font = rFonts.get(qn('w:ascii')) or ascii_font
+                    ea_font = rFonts.get(qn('w:eastAsia')) or ea_font
+            font_ok = (ascii_font == 'Times New Roman' or ascii_font == '宋体') and \
+                      (ea_font == '宋体' or ea_font == 'Times New Roman')
+            if font_ok:
+                self.verify('字体', True, f'参考文献条目"{short}" 字体正确(中宋体/英TNR)')
             else:
-                self.verify('字体', False, f'参考文献条目"{short}" 字体应为宋体',
-                            f'实际: {run.font.name}')
+                self.verify('字体', False, f'参考文献条目"{short}" 字体应为中宋体/英TNR',
+                            f'实际ascii: {ascii_font}, eastAsia: {ea_font}')
 
             if run.font.size and check_emu(run.font.size, spec['size']):
                 self.verify('字体', True, f'参考文献条目"{short}" 五号(10.5pt)')

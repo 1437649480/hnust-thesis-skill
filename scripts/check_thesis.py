@@ -60,8 +60,8 @@ def match_h1(text):
     return bool(re.match(r'^第[一二三四五六七八九十\d]+章\s', text))
 
 def match_h2(text):
-    """匹配节标题: X.Y 或 X.Y.Z"""
-    return bool(re.match(r'^[\d]+\.[\d]+(\.[\d]+)?\s', text))
+    """匹配节标题: X.Y（不匹配X.Y.Z）"""
+    return bool(re.match(r'^[\d]+\.[\d]+(?!\.[\d])\s', text))
 
 def match_h3(text):
     """匹配条标题: X.Y.Z 或 X.Y.Z.W"""
